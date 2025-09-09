@@ -1,0 +1,299 @@
+---
+title: "TFM"
+author: "Daniel Rodriguez Fustes"
+date: "28/4/2022"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+En primer lugar se carga la base de datos y se convierte en el dataframe "CX".
+```{r}
+suppressWarnings(suppressPackageStartupMessages(library(readxl)))
+CX <- read_excel("TABLA_DATOS_4.xlsx", 
+     col_types = c("numeric", "text", "text", 
+         "text", "text", "text", 
+         "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric"))
+CX <- as.data.frame(CX, stringsAsFactors = FALSE)
+```
+Se convierten en factor las variables que son de clase carácter.
+```{r}
+for (columna in 1:17) {
+  if(is.character(CX[,columna])){
+    CX[,columna]<-as.factor(CX[,columna])
+  }
+}
+```
+
+Se ordenan los niveles del factor Customer Revenue 2021
+```{r}
+CX$`Customer Revenue 2021`<-factor(CX$`Customer Revenue 2021`,levels=levels(CX$`Customer Revenue 2021`)[c(6,1,4,2,3,5)])
+levels(CX$`Customer Revenue 2021`)
+```
+
+A continuación se realiza una exploración general de los datos del dataframe para detectar posibles datos ausentes (NA).
+```{r}
+sapply(CX,function(x) sum(is.na(x)))
+```
+
+Se eliminan las 11 observaciones de la variable "Cancellation reason" con valor distinto a "Not cancelled".
+```{r}
+CX<-CX[CX$`Cancellation Reason`=="Not cancelled",]
+```
+
+Se elimina la variable "Cancellation reason" por tener un solo valor.
+```{r}
+CX<-CX[,c(1:2,4:17)]
+```
+
+Se eliminan las observaciones de la variable "Cancellation reason" con valor distinto a "Not cancelled".
+```{r}
+CX<-CX[CX$`Customer Group`!="Not assigned",]
+```
+
+A continuación se procede a detectar visualmente si hay datos extremos (outliers) mediante los gráficos de caja.
+```{r}
+suppressWarnings(suppressPackageStartupMessages(library(ggplot2)))
+ggplot(CX,aes(x="",y=CX[,1]))+ stat_boxplot(geom = "errorbar",width = 0.15)+ geom_boxplot(color=1,outlier.colour = 2,)+labs(x="",y="Sales order value") +coord_cartesian(ylim = c(0, 60000))
+```
+
+Se detectan más de 700 outliers en el dataframe "CX". Se eliminan los outliers de las variables cuantitativas. Se ignoran los outliers de las variables categóricas NACIONALIDAD y CLASE, especialmente esta última, ya que contiene información esencial que debe ser aprovechada (observaciones con valor "NO").
+```{r}
+# for(columna in 1:6) {
+#   CX<-CX[!CX[,columna] %in% boxplot.stats(CX[,columna])$out,]
+# }
+```
+
+Se comienza el análisis descriptivo de las variables con la base de datos preprocesada "CX"
+
+Estructura del archivo.
+```{r}
+str(CX)
+```
+Información descriptiva de las variables.
+```{r}
+suppressWarnings(suppressPackageStartupMessages(library(skimr)))
+skim(CX)
+```
+A continuación se aborda el análisis descriptivo gráfico.
+
+Se ve las distribución de los valores de las variables numéricas de manera gráfica.
+```{r}
+suppressWarnings(suppressPackageStartupMessages(library(funModeling)))
+plot_num(CX)
+```
+
+También se visualizan las frecuencias de las variables categóricas.
+```{r}
+freq(CX)
+```
+Se equilibra con una submuestra aleatoria la variable "Order Creation Date" 
+```{r}
+set.seed(123)
+subset_no_pand<-sample(rownames(CX[CX$`Order Creation Date`=="NO PANDEMIA",]),size=454,replace = F)
+subset_pand<-rownames(CX[CX$`Order Creation Date`=="PANDEMIA",])
+subset_final<-c(subset_no_pand,subset_pand)
+subset_final
+CX_pand<-CX[subset_final,]
+skim(CX_pand)
+```
+Cruzamos variables con la submuestra equilibrada
+```{r fig.width=10}
+cross_plot(CX_pand[,c(1:4,6:16)],target="Order Creation Date",auto_binning = T)
+```
+
+A continuación se emplean tablas para obtener información más específica.
+
+```{r}
+suppressWarnings(suppressPackageStartupMessages(library(tidyverse)))
+suppressWarnings(suppressPackageStartupMessages(library(kableExtra)))
+kable(CX_pand %>%
+   filter(`Customer Revenue 2021`=="ZERO",`Order Creation Date`=="NO PANDEMIA") %>%
+   group_by(`Customer Group`)%>%
+   summarise(Count=n(),CS_Av=mean(`Customer Service Availability`),CS_Fr=mean(`Customer Service Friendliness`),CS_Co=mean(`Customer Service Competence`),CS_Re=mean(`Customer Service Reliability`),Prod_Av=mean(`Product Availability`),Del_Time=mean(`Delivery Time`),Ontime_del=mean(`On-time Delivery`),Entire_Pr=mean(`Entire Order Process`)))
+
+kable(CX_pand %>%
+   filter(`Customer Revenue 2021`=="ZERO",`Order Creation Date`=="NO PANDEMIA") %>%
+   group_by(`Account Number`)%>%
+   summarise(Count=n()))
+```
+Se agrupa la variable CIVIL a la tabla anterior
+```{r}
+# CX %>% 
+#   group_by(CLASE,NUM_FAMILIA,CIVIL) %>%
+#   summarise(ESFUERZO_ECON = (mean(IMPCUOTA) / (mean(INGRESOS)/12)*100))
+```
+Se aplica un filtro sobre los ingresos, para contemplar únicamente las observaciones de las familias que ingresan menos de 18000 euros anuales.
+```{r}
+# CX %>% 
+#   filter(INGRESOS<18000) %>%
+#   group_by(CLASE, NUM_FAMILIA,CIVIL) %>% 
+#   summarise(ESFUERZO_ECON = (mean(IMPCUOTA) / (mean(INGRESOS)/12)*100))
+```
+
+Se cruza la variable CLASE con la variable VIVIENDA
+```{r}
+ggplot(data=CX,aes(x=CX[,1],y=CX[,8]))+geom_point()
+```
+
+Se realiza un grid con las variables CLASE y TIPO_TRABAJO
+```{r}
+# gr3 <- ggplot(CX, aes(x=CLASE),fill(CLASE)) + 
+#        geom_bar(position="dodge",colour="cyan2", fill="cyan3") +
+#        ylab("Número de casos")
+# gr3 + facet_grid(.~ TIPO_TRABAJO) +
+#       ggtitle("Casos según la devolución del préstamo y el tipo de trabajo")
+```
+
+Se presenta un histograma con el número de registros de la devolución del crédito según los ingresos.
+```{r}
+# hist1 <- ggplot(CX, aes(x = INGRESOS)) + 
+#          geom_histogram(aes(y=..density..), colour="cyan2", fill = "cyan3") +
+#          ylab("Densidad") +
+#          geom_density(alpha = .2, fill = "#FF6666") +
+#          ggtitle("Número de registros de la devolución del crédito según el importe de la cuota") 
+# hist1 + facet_grid(CLASE ~.)
+```
+
+Se presentan diagramas de caja que relacionan NACIONALIDAD e IMPCUOTA.
+```{r}
+# plot1 <- ggplot(CX, aes(x = NACIONALIDAD, y = IMPCUOTA )) + 
+#      geom_boxplot(color= 'cyan3') + 
+#      ggtitle("Gráficos de caja según la nacionalidad y el importe de la cuota") + 
+#      theme(plot.title = element_text(hjust = 0.5))
+# plot1
+```
+
+Se realiza un Scatter plot con suavizado que relaciona la inversión y la cuota mensual.
+```{r}
+# ggplot(data = CX, aes(INVERSION, IMPCUOTA)) + 
+#   geom_point(aes(col = CLASE)) + 
+#   stat_smooth() +
+#   ggtitle("Scatterplot. Inversión e importe de la cuota") + 
+#   theme(plot.title = element_text(hjust = 0.5))
+```
+
+Correlaciones. Se genera el fichero "var_num" con las variables numéricas y sobre este archivo se calculan las correlaciones entre ellas.
+```{r}
+var_num <- CX[ ,c(1,9,10,11,12,13,14,15,16)]
+suppressWarnings(suppressPackageStartupMessages(library(PerformanceAnalytics)))
+chart.Correlation(var_num, histogram = F, pch = 19)
+```
+
+Se comienza la modelizacion.
+
+Se genera un modelo de clasificacion sobre la variable Entire Order Process de modo que las observaciones excelentes con puntuacion 5 se les asigna el valor 1 y, a las puntuaciones entre 1 y 4 se les asigna el valor 0
+
+```{r}
+CX[CX$`Entire Order Process`!=5,16]<-"NO_EXCELENTE"
+CX[CX$`Entire Order Process`==5,16]<-"EXCELENTE"
+CX$`Entire Order Process`<-as.factor(CX$`Entire Order Process`)
+length(rownames(CX[CX$`Entire Order Process`=="EXCELENTE",]))
+```
+Equilibrado de la muestra. Se inspecciona la variable dependiente CLASE.
+Se recuentan más de 656 casos en los que se ha devuelto el crédito y 297 casos en los que no. La diferencia es muy grande por lo que se hace necesario un equilibrado de la muestra.
+Se realiza un balanceo a nivel de datos. Se realiza un submuestreo de los datos con valor CLASE = SI mediante el método del cubo.
+```{r}
+# Data frame que contiene la población (CLASE = SI)
+CX_SI <- subset(CX,CX$`Entire Order Process` == "EXCELENTE")
+
+# Creamos las variables indicadores para cada una de las variables de equilibrio
+suppressWarnings(suppressPackageStartupMessages(library(sampling)))
+X1 <- disjunctive(CX_SI$`Created by`)
+sumario<-summary(CX_SI$`Created by`)
+sumario<-as.vector(names(sumario))
+# Se suprimen dos niveles de factor sin observaciones en la submuestra
+sumario<-sumario[c(-3,-19)]
+colnames(X1) <- levels(sumario)
+
+X2 <- disjunctive(CX_SI$Region)
+colnames(X2) <- levels(CX_SI$Region)
+
+X3 <- disjunctive(CX_SI$`Order Creation Date`)
+colnames(X3) <- levels(CX_SI$`Order Creation Date`)
+
+X4 <- disjunctive(CX_SI$`Customer Group`)
+sumario4<-summary(CX_SI$`Customer Group`)
+sumario4<-as.vector(names(sumario4))
+# Se suprimen dos niveles de factor sin observaciones en la submuestra
+sumario4<-sumario4[c(-6)]
+sumario4
+colnames(X4) <- levels(sumario4)
+
+X5 <- disjunctive(CX_SI$`Customer Revenue 2021`)
+colnames(X5) <- levels(CX_SI$`Customer Revenue 2021`)
+
+
+# Creamos también una variable que vale 1 en todos los registros 
+# (para comprobar la estimación del tamaño poblacional)
+UNO = rep(1, dim(CX_SI)[1])
+
+# Construimos la matriz de equilibrio a partir de estas variables
+X <- cbind(UNO, X1, X2, X3, X4, X5)
+
+# Calculamos las probabilidades de inclusión.
+# En este caso se trata de un m.a.s. con tamaño muestral de nB = 297
+# Por lo tanto, la prob. de inclusión de cada individuo es 297/nA; 
+# donde nA es el tamaño de la población.
+nB = 297
+nA = nrow(CX_SI)
+pik = rep(nB/nA, nA)
+
+# Selecionamos la muestra con la matriz de equilibrio X   
+#   Order=1; los datos son ordenados aleatoriamente
+#   Order=2; se dejan como están
+#   Order=3; se ordenan en orden decreciente
+#   method=1; fase de aterrizaje mediante programación lineal
+#   method=2; fase de aterrizaje mediante supresión de variables
+s = samplecube(X, pik, order=1, comment = FALSE, method = 2)
+muestra.SI = cbind(CX_SI, s)
+muestra.SI <- subset(muestra.SI, s == 1)
+muestra.SI$s <- NULL
+
+# Calidad de la muestra obtenida
+Totales <- apply(X, 2, sum)
+Horvitz.Thompson <- apply(X * s / pik, 2, sum)
+calidad <- cbind.data.frame(Totales, Horvitz.Thompson)
+calidad$Desv.Abs. <- round(calidad$Totales - calidad$Horvitz.Thompson, 2)
+calidad$Desv.Rel. <- round((calidad$Totales / calidad$Horvitz.Thompson - 1) *100, 2)
+print(as.matrix.data.frame(calidad))
+```
+
+```{r}
+# Data frame que contiene la población ENTIRE ORDER PROCESS = NO EXCELENTE
+muestra.NO<-subset(CX,CX$`Entire Order Process`=="NO_EXCELENTE")
+```
+
+Se combinan la submuestra "muestra.SI" con la sobremuestra "muestra.NO"
+```{r}
+CX.balanceado <- rbind( muestra.SI, muestra.NO )
+```
+Se revisa la tabla de frecuencias.
+```{r}
+table(CX.balanceado$`Entire Order Process`)
+```
+
+Se realiza la regresion sobre la variable dependiente binaria CLASE:
+```{r}
+#Se transforma la variable ENTIRE ORDER PROCESS en numérica y se actualizan los valores para que tome los valores 0 para el valor "NO_EXCELENTE" y 1 para el valor "EXCELENTE"
+colnames(CX.balanceado)<-c("SOV","CREATEDBY","REGION","ORDERDATE","CLIENTE","COUNTRY","CUSTOMERGR","CUSTOMERREV","CSAV","CSFR","CSCO","CSRE","PRODAV","DELTIME","ONTIMEDEL","ENTIRE")
+CX.balanceado[,"ENTIRE"]<-as.numeric(CX.balanceado[,"ENTIRE"])
+CX.balanceado$ENTIRE[CX.balanceado$ENTIRE==2]<-0
+CX.balanceado$ENTIRE[CX.balanceado$ENTIRE==1]<-1
+#Se ejecuta el modelo de regresión que calcula la probabilidad de que una persona devuelva un crédito.
+modelo <- glm(ENTIRE ~ ., data = CX.balanceado[,c(-2,-5,-6)], family =binomial("logit"))
+summary(modelo)
+```
+Las variables significativas al 95% de confianza son:
+```{r}
+summary(modelo)$coeff[-1,4] < 0.05
+```
+
+
+
+
+
